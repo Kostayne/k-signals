@@ -1,0 +1,10 @@
+{
+  "include": ["src"],
+
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "strict": false,
+    "target": "ES2023",
+    "lib": ["ES2015"]
+  }
+}
