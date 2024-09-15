@@ -1,4 +1,5 @@
 let currentSignal: Signal = undefined;
+const effects: Set<Effect> = new Set();
 
 const VALUE = Symbol.for('sig-value');
 const DEPS = Symbol.for('sig-deps');
@@ -43,6 +44,46 @@ class Signal<T = any> {
   public updater() {}
 }
 
+class Effect {
+  public isActive = true;
+
+  private signal: Signal;
+  private callback: () => void;
+
+  constructor(callback: () => void) {
+    this.callback = callback;
+    this.signal = signal(undefined);
+    this.signal.updater = this.updater.bind(this);
+
+    effects.add(this);
+
+    const restoreSignal = changeCurrentSignal(this.signal);
+    this.callback();
+    restoreSignal();
+  }
+
+  private updater() {
+    if (!this.isActive) {
+      return;
+    }
+
+    const restoreSignal = changeCurrentSignal(this.signal);
+    this.callback();
+    restoreSignal();
+  }
+
+  dispose() {
+    // rm all relations
+    this.signal[SUBS].forEach(sub => {
+      sub[DEPS].delete(this.signal);
+      this.signal[SUBS].delete(sub);
+    });
+
+    // rm from memory
+    effects.delete(this);
+  }
+}
+
 /**
  * @description Recomputes value on deps change
  * @param compute Compute callback
@@ -55,14 +96,10 @@ class Signal<T = any> {
  */
 export function computed(compute: () => void) {
   const signal = new Signal(undefined);
-
-  let prevSignal = currentSignal;
-  currentSignal = signal;
+  const restoreSignal = changeCurrentSignal(signal)
 
   const updater = () => {
-    // remember prev signal
-    prevSignal = currentSignal;
-    currentSignal = signal;
+    const restoreSignal = changeCurrentSignal(signal);
 
     // deleting old signals
     signal[SUBS].forEach(sub => {
@@ -77,16 +114,36 @@ export function computed(compute: () => void) {
     }
 
     // restore prev signal
-    currentSignal = prevSignal;
+    restoreSignal();
   };
 
   // setting up signal
   signal.updater = updater;
   signal.value = compute();
 
-  currentSignal = prevSignal;
-
+  restoreSignal();
   return signal;
+}
+
+/**
+ * @description Changes signal to new, returns restore function
+ * @param newSignal 
+ * @returns 
+ */
+function changeCurrentSignal(newSignal: Signal) {
+  let prevSignal = currentSignal;
+  currentSignal = newSignal;
+
+  return () => {
+    currentSignal = prevSignal
+  };
+}
+
+/**
+ * @description Effect constructor function, callback will be called every time deps change
+ */
+export function effect(cb: () => void) {
+  return new Effect(cb);
 }
 
 /**

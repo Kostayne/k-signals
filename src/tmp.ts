@@ -1,10 +1,7 @@
-import { computed, signal } from './index';
+import { computed, effect, signal } from './index';
 
 const a = signal('a');
-const t1 = computed(() => a.value);
-const tg = computed(() => t1.value);
-
-console.log(tg.value);
+const eff = effect(() => console.log(a.value));
 
 a.value = 'aa';
-console.log(tg.value);
+eff.dispose();
