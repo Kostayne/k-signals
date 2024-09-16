@@ -1,5 +1,7 @@
+let isInBatch = false;
 let currentSignal: Signal = undefined;
 const effects: Set<Effect> = new Set();
+const batchDeps: Set<Signal> = new Set();
 
 const VALUE = Symbol.for('sig-value');
 const DEPS = Symbol.for('sig-deps');
@@ -35,10 +37,17 @@ class Signal<T = any> {
     // clone deps to avoid infinite loop
     const deps = new Set(this[DEPS]);
 
-    // update all dependencies
-    deps.forEach(signal => {
-      signal.updater();
-    });
+    if (isInBatch) {
+      // remember to update all deps after batch ends
+      deps.forEach(signal => {
+        batchDeps.add(signal);
+      });
+    } else {
+      // update all dependencies
+      deps.forEach(signal => {
+        signal.updater();
+      });
+    }
   }
 
   public updater() {}
@@ -126,9 +135,43 @@ export function computed(compute: () => void) {
 }
 
 /**
+ * @description Batch will postpone reactions of computed & effect until batch end.
+ * 
+ * @param exec Function that mutates signal value
+ * 
+ * @example
+ * const a = signal('a');
+ * const b = signal('b');
+ * 
+ * effect(() => console.log(a.value + b.value)) // prints ab
+ * 
+ * // prints aabb;
+ * batch(() => {
+ *  a.value = 'aa'; // nothing will be printed here
+ *  b.value = 'bb'; // nothing will be printed here
+ * });
+ */
+export function batch(exec: () => void) {
+  // already in batch, so it's a nested one
+  if (isInBatch) {
+    exec();
+  } else {
+    // first batch
+    isInBatch = true;
+    exec();
+
+    batchDeps.forEach(signal => {
+      signal.updater();
+    });
+
+    batchDeps.clear();
+    isInBatch = false;
+  }
+}
+
+/**
  * @description Changes signal to new, returns restore function
  * @param newSignal 
- * @returns 
  */
 function changeCurrentSignal(newSignal: Signal) {
   let prevSignal = currentSignal;

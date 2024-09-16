@@ -1,4 +1,4 @@
-import { computed, effect, signal } from './index';
+import { batch, computed, effect, signal } from './index';
 
 describe('Signals', () => {
   it('Signal stores the value', () => {
@@ -128,5 +128,42 @@ describe('Signals', () => {
 
     a.value = 'aa';
     expect(tg).toHaveBeenCalledTimes(1);
+  });
+
+  it(`Batch postpones signal reactions`, () => {
+    const a = signal('a');
+    const b = signal('b');
+
+    const spy = jest.fn(() => a.value + b.value);
+    const tg = computed(spy);
+
+    batch(() => {
+      a.value = 'aa';
+      b.value = 'bb';
+    });
+
+    expect(tg.value).toBe('aabb');
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('Only the outer batch will update deps', () => {
+    const a = signal('a');
+    const b = signal('b');
+
+    const spy = jest.fn(() => a.value + b.value);
+    const tg = computed(spy);
+
+    batch(() => {
+      batch(() => {
+        a.value = 'a1';
+        b.value = 'b1';
+      });
+
+      a.value = 'aa';
+      b.value = 'bb';
+    });
+
+    expect(tg.value).toBe('aabb');
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 });
