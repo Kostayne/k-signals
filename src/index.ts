@@ -1,3 +1,5 @@
+import { freezeSet } from './utils/freezeSet';
+
 let isInBatch = false;
 let currentEffect: Effect | undefined = undefined;
 
@@ -8,6 +10,12 @@ const VALUE = Symbol.for('sig-value');
 const DEPS = Symbol.for('sig-deps');
 const SUBS = Symbol.for('sig-subs');
 const EFFECT_CB = Symbol.for('eff-cb');
+const IS_WATCHER = Symbol.for('eff-is-watcher');
+
+type WatchEffect = Effect & {
+  [IS_WATCHER]: boolean;
+  dispose: () => void;
+};
 
 class Signal<T = any> {
   [VALUE]: T;
@@ -18,8 +26,10 @@ class Signal<T = any> {
   }
 
   public get value() {
+    const currEff = currentEffect as WatchEffect;
+
     // subscribe to compute effect
-    if (currentEffect !== undefined) {
+    if (currentEffect !== undefined && !currEff[IS_WATCHER]) {
       this[DEPS].add(currentEffect);
       currentEffect[SUBS].add(this);
     }
@@ -167,6 +177,47 @@ export function batch(exec: () => void) {
     batchDeps.clear();
     isInBatch = false;
   }
+}
+
+/**
+ * @description Runs callback if specified deps changed
+ * @param effectCb callback to run
+ * @param deps deps to watch
+ * @returns effect instance
+ * 
+ * @example
+ * const a = signal('a');
+ * const b = signal('b');
+ * const eff = watch(() => { console.log(a.value); console.log(b.value) }, [a]);
+ * 
+ * a.value = 'aa'; // prints 'aa', 'b'
+ * b.value = 'bb'; // prints nothing
+ * 
+ * eff.dispose();
+ */
+export function watch(effectCb: () => void, deps: Signal[]) {
+  const eff = effect(effectCb, false) as WatchEffect;
+  const freezedDeps = freezeSet(new Set(deps));
+
+  eff[SUBS] = freezedDeps as unknown as Set<Signal>;
+
+  // subscribe all deps
+  freezedDeps.forEach((depSignal) => {
+    depSignal[DEPS].add(eff);
+    eff[SUBS].add(depSignal);
+  });
+
+  // add dispose method
+  eff.dispose = () => {
+    eff.isActive = false;
+    effects.delete(eff);
+  };
+
+  // activating the effect
+  effects.add(eff);
+  eff.isActive = true;
+
+  return eff;
 }
 
 /**

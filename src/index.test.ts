@@ -1,4 +1,4 @@
-import { batch, computed, effect, signal } from './index';
+import { batch, computed, effect, signal, watch } from './index';
 
 describe('Signals', () => {
   it('Signal stores the value', () => {
@@ -93,7 +93,7 @@ describe('Signals', () => {
     expect(tg.value).toBe('aa');
   });
 
-  it.only('Effect runs once if deps not changed', () => {
+  it('Effect runs once if deps not changed', () => {
     const a = signal('a');
     const tg = jest.fn(() => a.value);
     const e = effect(tg);
@@ -101,7 +101,7 @@ describe('Signals', () => {
     expect(tg).toHaveBeenCalledTimes(1);
   });
 
-  it.only('Effect runs twice if deps changed', () => {
+  it('Effect runs twice if deps changed', () => {
     const a = signal('a');
     const tg = jest.fn(() => a.value);
     effect(tg);
@@ -110,7 +110,7 @@ describe('Signals', () => {
     expect(tg).toHaveBeenCalledTimes(2);
   });
 
-  it.only('Effect won\'t be called if it\'s deactivated', () => {
+  it('Effect won\'t be called if it\'s deactivated', () => {
     const a = signal('a');
     const tg = jest.fn(() => a.value);
     const eff = effect(tg);
@@ -155,5 +155,47 @@ describe('Signals', () => {
 
     expect(tg.value).toBe('aabb');
     expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('Watcher not runs on start', () => {
+    const a = signal('a');
+    const tg = jest.fn(() => {});
+    const eff = watch(tg, [a]);
+
+    expect(tg).toHaveBeenCalledTimes(0);
+  });
+
+  it('Watcher runs only on deps change', () => {
+    const a = signal('a');
+    const tg = jest.fn(() => {});
+    watch(tg, [a]);
+    a.value = 'aa';
+
+    expect(tg).toHaveBeenCalledTimes(1);
+  });
+
+  it('Watcher not runs on actual deps change if they are not listed', () => {
+    const a = signal('a');
+    const tg = jest.fn(() => { a.value });
+    watch(tg, []);
+    a.value = 'aa';
+
+    expect(tg).toHaveBeenCalledTimes(0);
+  });
+
+  it('Watcher won\'t run callback after dispose until it turned on', () => {
+    const a = signal('a');
+    const tg = jest.fn(() => { a.value });
+    const eff = watch(tg, [a]);
+
+    eff.dispose();
+    a.value = 'aa';
+
+    expect(tg).toHaveBeenCalledTimes(0);
+
+    eff.isActive = true;
+    a.value = 'a2';
+
+    expect(tg).toHaveBeenCalledTimes(1);
   });
 });
