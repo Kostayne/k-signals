@@ -1,26 +1,27 @@
 let isInBatch = false;
-let currentSignal: Signal = undefined;
+let currentEffect: Effect | undefined = undefined;
+
 const effects: Set<Effect> = new Set();
-const batchDeps: Set<Signal> = new Set();
+const batchDeps: Set<Effect> = new Set();
 
 const VALUE = Symbol.for('sig-value');
 const DEPS = Symbol.for('sig-deps');
 const SUBS = Symbol.for('sig-subs');
+const EFFECT_CB = Symbol.for('eff-cb');
 
 class Signal<T = any> {
   [VALUE]: T;
-  [DEPS] = new Set<Signal>();
-  [SUBS] = new Set<Signal>();
+  [DEPS] = new Set<Effect>();
 
   constructor(value?: T) {
-    this[VALUE] = value;
+    this[VALUE] = value!;
   }
 
   public get value() {
-    // subscribe to computed signal
-    if (currentSignal !== undefined) {
-      this[DEPS].add(currentSignal);
-      currentSignal[SUBS].add(this);
+    // subscribe to compute effect
+    if (currentEffect !== undefined) {
+      this[DEPS].add(currentEffect);
+      currentEffect[SUBS].add(this);
     }
 
     return this[VALUE];
@@ -39,13 +40,13 @@ class Signal<T = any> {
 
     if (isInBatch) {
       // remember to update all deps after batch ends
-      deps.forEach(signal => {
-        batchDeps.add(signal);
+      deps.forEach(effect => {
+        batchDeps.add(effect);
       });
     } else {
       // update all dependencies
-      deps.forEach(signal => {
-        signal.updater();
+      deps.forEach(effect => {
+        effect.exec();
       });
     }
   }
@@ -54,42 +55,33 @@ class Signal<T = any> {
 }
 
 class Effect {
-  public isActive = true;
+  public isActive: boolean;
 
-  private signal: Signal;
-  private callback: () => void;
+  /**
+   * @internal
+   */
+  public [SUBS]: Set<Signal>;
 
-  constructor(callback: () => void) {
-    this.callback = callback;
-    this.signal = signal(undefined);
-    this.signal.updater = this.updater.bind(this);
+  /**
+   * @internal
+   */
+  public [EFFECT_CB]: () => void;
 
-    effects.add(this);
+  constructor(effectCb: () => void, isActive = true) {
+    this.isActive = isActive;
+    this[EFFECT_CB] = effectCb;
+    this[SUBS] = new Set();
 
-    const restoreSignal = changeCurrentSignal(this.signal);
-    this.callback();
-    restoreSignal();
+    // run effect to subscribe all used signals
+    this.exec();
   }
 
-  private updater() {
-    if (!this.isActive) {
-      return;
+  public exec() {
+    if (this.isActive) {
+      const restoreEff = changeCurrentEffect(this);
+      this[EFFECT_CB]();
+      restoreEff();
     }
-
-    const restoreSignal = changeCurrentSignal(this.signal);
-    this.callback();
-    restoreSignal();
-  }
-
-  dispose() {
-    // rm all relations
-    this.signal[SUBS].forEach(sub => {
-      sub[DEPS].delete(this.signal);
-      this.signal[SUBS].delete(sub);
-    });
-
-    // rm from memory
-    effects.delete(this);
   }
 }
 
@@ -103,35 +95,41 @@ class Effect {
  * a.value = 'aa'; 
  * console.log(tg.value) // 'aa!'
  */
-export function computed(compute: () => void) {
-  const signal = new Signal(undefined);
-  const restoreSignal = changeCurrentSignal(signal)
+export function computed<T = any>(compute: () => T) {
+  const internalSignal = signal<T>(undefined);
 
-  const updater = () => {
-    const restoreSignal = changeCurrentSignal(signal);
+  // creating effect with isActive = false, 
+  // so it won't call itself on start
+  const eff = effect(() => {
+    const restoreEffect = changeCurrentEffect(eff);
 
     // deleting old signals
-    signal[SUBS].forEach(sub => {
-      sub[DEPS].delete(signal);
-      signal[SUBS].delete(sub);
+    eff[SUBS].forEach(subSignal => {
+      subSignal[DEPS].delete(eff);
+      eff[SUBS].delete(subSignal);
     });
 
-    const ret = compute();
+    // computing new signal value
+    const newValue = compute();
     
-    if (ret !== signal[VALUE]) {
-      signal.value = ret;
+    if (newValue !== internalSignal[VALUE]) {
+      // the value is actually changed
+      internalSignal.value = newValue;
     }
 
-    // restore prev signal
-    restoreSignal();
-  };
+    // clean state
+    restoreEffect();
+  }, false);
 
-  // setting up signal
-  signal.updater = updater;
-  signal.value = compute();
+  // computing the initial value & subscribe signals to the effect
+  const restoreEffect = changeCurrentEffect(eff)
+  internalSignal[VALUE] = compute();
 
-  restoreSignal();
-  return signal;
+  // restore
+  restoreEffect();
+  eff.isActive = true;
+
+  return internalSignal;
 }
 
 /**
@@ -160,10 +158,12 @@ export function batch(exec: () => void) {
     isInBatch = true;
     exec();
 
-    batchDeps.forEach(signal => {
-      signal.updater();
+    // batch completed, run all deps
+    batchDeps.forEach(eff => {
+      eff.exec();
     });
 
+    // reset global state
     batchDeps.clear();
     isInBatch = false;
   }
@@ -171,26 +171,41 @@ export function batch(exec: () => void) {
 
 /**
  * @description Changes signal to new, returns restore function
- * @param newSignal 
+ * @param newEffect 
  */
-function changeCurrentSignal(newSignal: Signal) {
-  let prevSignal = currentSignal;
-  currentSignal = newSignal;
+function changeCurrentEffect(newEffect: Effect) {
+  let prevSignal = currentEffect;
+  currentEffect = newEffect;
 
   return () => {
-    currentSignal = prevSignal
+    currentEffect = prevSignal
   };
 }
 
 /**
  * @description Effect constructor function, callback will be called every time deps change
+ * @param cb Function that executes on dependencies change & right on start
+ * @param isActive If true callback will be called on start
+ * @example
+ * const a = signal('a');
+ * const eff = effect(() => console.log(a.value)); // a
+ * a.value = 'aa'; // aa
+ * 
+ * eff.isActive = false;
+ * a.value = 'a3'; // prints nothing
  */
-export function effect(cb: () => void) {
-  return new Effect(cb);
+export function effect(cb: () => void, isActive?: boolean) {
+  return new Effect(cb, isActive);
 }
 
 /**
  * @description Signal constructor function
+ * @example
+ * const a = signal('a');
+ * console.log(a.value) // a
+ * 
+ * a.value = 'aa'; 
+ * console.log(a.value) // aa
  */
 export function signal<T>(value?: T) {
   return new Signal(value);

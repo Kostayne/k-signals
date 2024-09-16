@@ -3,7 +3,7 @@
 
   "compilerOptions": {
     "esModuleInterop": true,
-    "strict": false,
+    "strict": true,
     "target": "ES2023",
     "lib": ["ES2015"]
   }
