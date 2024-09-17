@@ -24,12 +24,12 @@ export class RecursionError extends Error {
   }
 }
 
-class Signal<T = any> {
+class Signal<T = unknown> {
   [VALUE]: T;
   [DEPS] = new Set<Effect>();
 
   constructor(value?: T) {
-    this[VALUE] = value!;
+    this[VALUE] = value as T;
   }
 
   public get value() {
@@ -140,7 +140,7 @@ class Effect {
  * a.value = 'aa'; 
  * console.log(tg.value) // 'aa!'
  */
-export function computed<T = any>(compute: () => T) {
+export function computed<T = unknown>(compute: () => T) {
   const internalSignal = signal<T>(undefined);
 
   // creating effect with isActive = false, 
@@ -252,7 +252,7 @@ export function watch(effectCb: () => void, deps: Signal[]) {
  * @param newEffect 
  */
 function changeCurrentEffect(newEffect: Effect) {
-  let prevSignal = currentEffect;
+  const prevSignal = currentEffect;
   currentEffect = newEffect;
 
   return () => {

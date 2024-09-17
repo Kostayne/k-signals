@@ -171,7 +171,7 @@ describe('Signals', () => {
     expect(tg).toHaveBeenCalledTimes(1);
   });
 
-  it(`Batch postpones signal reactions`, () => {
+  it('Batch postpones signal reactions', () => {
     const a = signal('a');
     const b = signal('b');
 
