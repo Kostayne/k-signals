@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "test": "jest --silent=false --runInBand"
+    "test": "jest --silent=false"
   },
   "dependencies": {},
   "devDependencies": {

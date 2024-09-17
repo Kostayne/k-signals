@@ -68,6 +68,13 @@ class Signal<T = any> {
     }
   }
 
+  /**
+   * @description get signals value without subscribing to it
+   */
+  public peek(): T {
+    return this[VALUE];
+  }
+
   public updater() {}
 }
 

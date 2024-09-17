@@ -161,6 +161,16 @@ describe('Signals', () => {
     expect(tg).toThrow(RecursionError);
   });
 
+  it('Effect not subscribe to signal if peek used', () => {
+    const a = signal('a');
+    const tg = jest.fn(() => a.peek());
+
+    effect(tg);
+    a.value = 'aa';
+
+    expect(tg).toHaveBeenCalledTimes(1);
+  });
+
   it(`Batch postpones signal reactions`, () => {
     const a = signal('a');
     const b = signal('b');
