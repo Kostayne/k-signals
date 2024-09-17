@@ -1,7 +1,10 @@
 import { computed, effect, signal } from './index';
 
 const a = signal('a');
-const eff = effect(() => console.log(a.value));
+const comp: ReturnType<typeof signal>[] = [];
+
+for (let i = 0; i < 250; i++) {
+  comp[i] = computed(() => comp[i - 1]?.value || a.value);
+}
 
 a.value = 'aa';
-eff.dispose();

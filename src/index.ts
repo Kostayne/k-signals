@@ -3,7 +3,6 @@ import { freezeSet } from './utils/freezeSet';
 let isInBatch = false;
 let currentEffect: Effect | undefined = undefined;
 
-const effects: Set<Effect> = new Set();
 const batchDeps: Set<Effect> = new Set();
 
 const VALUE = Symbol.for('sig-value');
@@ -12,10 +11,18 @@ const SUBS = Symbol.for('sig-subs');
 const EFFECT_CB = Symbol.for('eff-cb');
 const IS_WATCHER = Symbol.for('eff-is-watcher');
 
+const maxRecursionLevel = 100;
+let recursionLevel = 0;
+
 type WatchEffect = Effect & {
   [IS_WATCHER]: boolean;
-  dispose: () => void;
 };
+
+export class RecursionError extends Error {
+  constructor(deepLevel: number) {
+    super(`Max effect reactions count reached (${deepLevel}). It seems you have infinite recursion.`);
+  }
+}
 
 class Signal<T = any> {
   [VALUE]: T;
@@ -66,6 +73,7 @@ class Signal<T = any> {
 
 class Effect {
   public isActive: boolean;
+  public onDispose?: () => void;
 
   /**
    * @internal
@@ -77,8 +85,9 @@ class Effect {
    */
   public [EFFECT_CB]: () => void;
 
-  constructor(effectCb: () => void, isActive = true) {
+  constructor(effectCb: () => void, onDispose?: () => void, isActive = true) {
     this.isActive = isActive;
+    this.onDispose = onDispose;
     this[EFFECT_CB] = effectCb;
     this[SUBS] = new Set();
 
@@ -87,11 +96,30 @@ class Effect {
   }
 
   public exec() {
+    if (recursionLevel >= maxRecursionLevel) {
+      const prevRec = recursionLevel;
+      recursionLevel = 0;
+      throw new RecursionError(prevRec);
+    }
+
     if (this.isActive) {
       const restoreEff = changeCurrentEffect(this);
+
+      recursionLevel++;
       this[EFFECT_CB]();
+      recursionLevel--;
+
       restoreEff();
     }
+  }
+
+  public dispose() {
+    this[SUBS].forEach(signal => {
+      signal[DEPS].delete(this);
+      this[SUBS].delete(signal);
+    });
+
+    this.onDispose?.();
   }
 }
 
@@ -207,16 +235,8 @@ export function watch(effectCb: () => void, deps: Signal[]) {
     eff[SUBS].add(depSignal);
   });
 
-  // add dispose method
-  eff.dispose = () => {
-    eff.isActive = false;
-    effects.delete(eff);
-  };
-
   // activating the effect
-  effects.add(eff);
   eff.isActive = true;
-
   return eff;
 }
 
@@ -246,7 +266,7 @@ function changeCurrentEffect(newEffect: Effect) {
  * a.value = 'a3'; // prints nothing
  */
 export function effect(cb: () => void, isActive?: boolean) {
-  return new Effect(cb, isActive);
+  return new Effect(cb, undefined, isActive);
 }
 
 /**

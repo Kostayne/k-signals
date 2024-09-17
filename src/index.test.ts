@@ -1,4 +1,4 @@
-import { batch, computed, effect, signal, watch } from './index';
+import { batch, computed, effect, RecursionError, signal, watch } from './index';
 
 describe('Signals', () => {
   it('Signal stores the value', () => {
@@ -93,6 +93,13 @@ describe('Signals', () => {
     expect(tg.value).toBe('aa');
   });
 
+  it('Computed can\'t cause an infinite loop with dep value reassign', () => {
+    const a = signal('a');
+    const comp = computed(() => { a.value = 'aa'; return a.value; });
+
+    expect(comp.value).toBe('aa');
+  });
+
   it('Effect runs once if deps not changed', () => {
     const a = signal('a');
     const tg = jest.fn(() => a.value);
@@ -118,6 +125,40 @@ describe('Signals', () => {
 
     a.value = 'aa';
     expect(tg).toHaveBeenCalledTimes(1);
+  });
+
+  it('Effect won\'t be called after dispose', () => {
+    const a = signal('a');
+    const tg = jest.fn(() => a.value);
+    const eff = effect(tg);
+    eff.dispose();
+
+    a.value = 'aa';
+    expect(tg).toHaveBeenCalledTimes(1);
+  });
+
+  it('Effect onDispose called with dispose', () => {
+    const tg = jest.fn(() => {});
+    const eff = effect(() => {});
+
+    eff.onDispose = tg;
+    eff.dispose();
+
+    expect(tg).toHaveBeenCalledTimes(1);
+  });
+
+  it('Effect won\'t cause infinite loop with computed', () => {
+    const tg = () => {
+      const a = signal(0);
+      const comp = computed(() => a.value);
+
+      const spy = jest.fn(() => { a.value = a.value + comp.value; });
+      effect(spy);
+
+      a.value++;
+    };
+
+    expect(tg).toThrow(RecursionError);
   });
 
   it(`Batch postpones signal reactions`, () => {
@@ -181,21 +222,5 @@ describe('Signals', () => {
     a.value = 'aa';
 
     expect(tg).toHaveBeenCalledTimes(0);
-  });
-
-  it('Watcher won\'t run callback after dispose until it turned on', () => {
-    const a = signal('a');
-    const tg = jest.fn(() => { a.value });
-    const eff = watch(tg, [a]);
-
-    eff.dispose();
-    a.value = 'aa';
-
-    expect(tg).toHaveBeenCalledTimes(0);
-
-    eff.isActive = true;
-    a.value = 'a2';
-
-    expect(tg).toHaveBeenCalledTimes(1);
   });
 });
