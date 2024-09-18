@@ -5,8 +5,11 @@ describe('Freeze set', () => {
     const set = freezeSet(new Set([1, 2, 3]));
 
     const tg = () => {
+      // @ts-ignore
       set.add = () => {};
+      // @ts-ignore
       set.clear = () => {};
+      // @ts-ignore
       set.delete = () => {};
     };
 

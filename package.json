@@ -1,13 +1,38 @@
 {
+  "name": "k-signals",
+  "description": "Js signals implementation, make your state reactive",
+  "version": "1.0.0",
+
+  "main": "dist/index.js",
+
   "scripts": {
-    "test": "jest --silent=false"
+    "build": "rm -rf dist && tsc",
+    "test": "jest --silent=false",
+    "prepublishOnly": "npm run test && npm run lint && npm run build",
+    "lint": "npx @biomejs/biome format ./src",
+    "lint:fix": "npx @biomejs/biome format ./src --fix"
   },
+
   "dependencies": {},
+
   "devDependencies": {
     "@biomejs/biome": "^1.9.1",
     "@types/jest": "^29.5.13",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2"
-  }
+  },
+
+  "author": {
+    "name": "Kostayne",
+    "email": "kostayne-dev@yandex.ru"
+  },
+
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kostayne/k-signals"
+  },
+
+  "keywords": ["signals", "reactive"],
+  "license": "MIT"
 }
